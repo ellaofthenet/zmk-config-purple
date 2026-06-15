@@ -1,0 +1,69 @@
+name: ZMK Firmware Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - board: nice_nano_v2
+            shield: sofle_rgb_left
+            artifact-name: sofle_rgb_left
+          - board: nice_nano_v2
+            shield: sofle_rgb_right
+            artifact-name: sofle_rgb_right
+          - board: nice_nano_v2
+            shield: settings_reset
+            artifact-name: settings_reset
+
+    steps:
+      - name: Checkout ZMK Config
+        uses: actions/checkout@v4
+
+      - name: Cache Zephyr dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/zephyr
+            ~/.west
+          key: ${{ runner.os }}-zephyr-${{ hashFiles('build.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-zephyr-
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            git cmake ninja-build gperf ccache dfu-util device-tree-compiler \
+            wget python3-pip python3-setuptools python3-wheel xz-utils file \
+            make gcc-arm-none-eabi libncurses-dev python3-dev python3-tk \
+            python3-pyparsing python3-click python3-venv
+
+      - name: Initialize and setup West
+        run: |
+          pip3 install --user west
+          west init -l .
+          west update
+          west zephyr-export
+
+      - name: Install Python dependencies
+        run: |
+          pip3 install --user -r zephyr/scripts/requirements.txt
+
+      - name: Build firmware - ${{ matrix.artifact-name }}
+        run: |
+          west build -b ${{ matrix.board }} -- -DSHIELD=${{ matrix.shield }}
+
+      - name: Upload firmware artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: zmk-${{ matrix.artifact-name }}
+          path: build/zephyr/zmk.uf2
+          retention-days: 30
